@@ -4,20 +4,19 @@ use pollster::block_on;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{HashSet, VecDeque};
+use std::iter;
 use std::time::Instant;
-use std::{iter, mem};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
     include_wgsl, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingType, BlendState, BufferAddress, BufferBindingType, BufferUsages,
-    Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode,
-    DeviceDescriptor, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor,
-    Limits, LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions,
+    BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferUsages, Color,
+    ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor,
+    Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits, LoadOp,
+    MemoryHints, MultisampleState, Operations, PipelineCompilationOptions,
     PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState,
     PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
     RequestAdapterOptions, ShaderStages, StoreOp, SurfaceConfiguration, TextureFormat,
-    TextureUsages, TextureViewDescriptor, VertexBufferLayout,
-    VertexState, VertexStepMode,
+    TextureUsages, TextureViewDescriptor, VertexBufferLayout, VertexState, VertexStepMode,
 };
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
@@ -26,10 +25,6 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowBuilder;
 
 mod vectors;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-struct Vertex {}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
@@ -63,8 +58,7 @@ fn main() {
     let event_loop = EventLoop::new().unwrap();
 
     let window = WindowBuilder::new()
-        .with_resizable(false)
-        .with_min_inner_size(PhysicalSize::new(1600, 1000))
+        .with_inner_size(PhysicalSize::new(1600, 1000))
         .build(&event_loop)
         .unwrap();
 
@@ -102,20 +96,18 @@ fn main() {
         .unwrap();
 
     let size = window.inner_size();
+    let mut surface_config = SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: texture_format,
+        width: size.width,
+        height: size.height,
+        present_mode: PresentMode::AutoVsync,
+        alpha_mode: CompositeAlphaMode::Auto,
+        desired_maximum_frame_latency: 2,
+        view_formats: Vec::new(),
+    };
 
-    surface.configure(
-        &device,
-        &SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: texture_format,
-            width: size.width,
-            height: size.height,
-            present_mode: PresentMode::AutoVsync,
-            alpha_mode: CompositeAlphaMode::Auto,
-            desired_maximum_frame_latency: 2,
-            view_formats: Vec::new(),
-        },
-    );
+    surface.configure(&device, &surface_config);
 
     let indices = Box::new([0u16, 1, 2, 0, 2, 3]);
     let indices = Box::leak(indices);
@@ -147,16 +139,10 @@ fn main() {
     let instances = Box::leak(instances.into());
 
     let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vertex buffer"),
+        label: None,
         contents: &[],
         usage: BufferUsages::VERTEX,
     });
-
-    let vertex_buffer_layout = VertexBufferLayout {
-        array_stride: mem::size_of::<Vertex>() as BufferAddress,
-        step_mode: VertexStepMode::Vertex,
-        attributes: &[],
-    };
 
     let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("index buffer"),
@@ -203,16 +189,15 @@ fn main() {
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    let aspect_transform = {
-        let size = window.inner_size();
+    fn get_aspect_transform(size: PhysicalSize<u32>) -> [f32; 2] {
         let (width, height) = (size.width as f32, size.height as f32);
         let min_dim = f32::min(width, height);
         [min_dim / width, min_dim / height]
-    };
+    }
 
     let aspect_transform_uniform = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("aspect transform"),
-        contents: cast_slice(&[aspect_transform]),
+        contents: cast_slice(&[get_aspect_transform(window.inner_size())]),
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
@@ -276,7 +261,11 @@ fn main() {
             module: &shader,
             entry_point: "vs_main",
             compilation_options: PipelineCompilationOptions::default(),
-            buffers: &[vertex_buffer_layout],
+            buffers: &[VertexBufferLayout {
+                array_stride: 0,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[],
+            }],
         },
         fragment: Some(FragmentState {
             module: &shader,
@@ -338,6 +327,17 @@ fn main() {
             } = event
             {
                 match event {
+                    WindowEvent::Resized(new_size) => {
+                        surface_config.width = new_size.width;
+                        surface_config.height = new_size.height;
+                        surface.configure(&device, &surface_config);
+
+                        queue.write_buffer(
+                            &aspect_transform_uniform,
+                            0,
+                            cast_slice(&[get_aspect_transform(window.inner_size())]),
+                        )
+                    }
                     WindowEvent::CloseRequested => {
                         target.exit();
                     }
