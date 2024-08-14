@@ -7,7 +7,18 @@ use std::collections::{HashSet, VecDeque};
 use std::time::Instant;
 use std::{iter, mem};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{include_wgsl, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferAddress, BufferBindingType, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Face, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits, LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, StoreOp, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode};
+use wgpu::{
+    include_wgsl, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingType, BlendState, BufferAddress, BufferBindingType, BufferUsages,
+    Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode,
+    DeviceDescriptor, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor,
+    Limits, LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions,
+    PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState,
+    PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+    RequestAdapterOptions, ShaderStages, StoreOp, SurfaceConfiguration, TextureFormat,
+    TextureUsages, TextureViewDescriptor, VertexBufferLayout,
+    VertexState, VertexStepMode,
+};
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -18,8 +29,7 @@ mod vectors;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
-struct Vertex {
-}
+struct Vertex {}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
@@ -107,24 +117,6 @@ fn main() {
         },
     );
 
-    // const EDGE_COUNT: u16 = 32;
-    //
-    // let mut vertices = vec![Vertex::zeroed()];
-    // for i in 0..EDGE_COUNT {
-    //     let theta = (i as f32 / EDGE_COUNT as f32) * std::f32::consts::TAU;
-    //     vertices.push(Vertex {
-    //         position: [theta.cos(), theta.sin()],
-    //     })
-    // }
-    //
-    // let mut indices = Vec::new();
-    // for i in 0..EDGE_COUNT {
-    //     let next_i = (i + 1) % EDGE_COUNT;
-    //     indices.push(0);
-    //     indices.push(i + 1);
-    //     indices.push(next_i + 1);
-    // }
-
     let indices = Box::new([0u16, 1, 2, 0, 2, 3]);
     let indices = Box::leak(indices);
 
@@ -211,27 +203,59 @@ fn main() {
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    let camera_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("camera bind group layout"),
-        entries: &[BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::VERTEX,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
+    let aspect_transform = {
+        let size = window.inner_size();
+        let (width, height) = (size.width as f32, size.height as f32);
+        let min_dim = f32::min(width, height);
+        [min_dim / width, min_dim / height]
+    };
+
+    let aspect_transform_uniform = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("aspect transform"),
+        contents: cast_slice(&[aspect_transform]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+    let display_info_bind_group_layout =
+        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("camera bind group layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+    let display_info_bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("camera bind group"),
-        layout: &camera_bind_group_layout,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: camera_uniform.as_entire_binding(),
-        }],
+        layout: &display_info_bind_group_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: camera_uniform.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: aspect_transform_uniform.as_entire_binding(),
+            },
+        ],
     });
 
     let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
@@ -240,7 +264,7 @@ fn main() {
         label: None,
         bind_group_layouts: &[
             &instance_frag_data_bind_group_layout,
-            &camera_bind_group_layout,
+            &display_info_bind_group_layout,
         ],
         push_constant_ranges: &[],
     });
@@ -391,7 +415,7 @@ fn main() {
 
                             render_pass.set_pipeline(&render_pipeline);
                             render_pass.set_bind_group(0, &instance_frag_data_bind_group, &[]);
-                            render_pass.set_bind_group(1, &camera_bind_group, &[]);
+                            render_pass.set_bind_group(1, &display_info_bind_group, &[]);
                             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                             // render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
                             render_pass.set_index_buffer(index_buffer.slice(..), index_format);
