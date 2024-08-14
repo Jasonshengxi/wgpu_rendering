@@ -1,8 +1,9 @@
-use bytemuck::{Pod, Zeroable};
+use crate::vectors::Vector2;
+use bytemuck::{cast_slice, Pod, Zeroable};
 use pollster::block_on;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::time::Instant;
 use std::{iter, mem};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -19,24 +20,43 @@ use wgpu::{
     VertexState, VertexStepMode,
 };
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowBuilder;
 
+mod vectors;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 struct Vertex {
-    position: [f32; 2],
+    position: Vector2,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 struct InstanceData {
-    position: [f32; 2],
-    size: [f32; 2],
+    position: Vector2,
+    size: Vector2,
     color: [f32; 3],
-    _padding2: u32,
+    _padding: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+struct Camera {
+    target: Vector2,
+    zoom: f32,
+    _padding: u32,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            ..Zeroable::zeroed()
+        }
+    }
 }
 
 fn main() {
@@ -118,14 +138,12 @@ fn main() {
     // }
 
     let vertices = Box::new(
-        [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
-            .map(|(x, y)| Vertex { position: [x, y] }),
+        [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)].map(|pos| Vertex {
+            position: pos.into(),
+        }),
     );
-    
-    let indices = Box::new([
-        0u16, 1, 2,
-        0, 2, 3,
-    ]);
+
+    let indices = Box::new([0u16, 1, 2, 0, 2, 3]);
 
     let vertices = Box::leak(vertices);
     let indices = Box::leak(indices);
@@ -134,9 +152,8 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(1000);
     let mut rand = || rng.random::<f32>();
     for _ in 0..1_000_000 {
-        let position = [rand() * 2.0 - 1.0, rand() * 2.0 - 1.0];
-        let distance = (position[0] * position[0] + position[1] * position[1]).sqrt()
-            * std::f32::consts::FRAC_1_SQRT_2;
+        let position = Vector2::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0);
+        let distance = position.length() * std::f32::consts::FRAC_1_SQRT_2;
 
         fn lerp(from: f32, to: f32, time: f32) -> f32 {
             (1.0 - time) * from + time * to
@@ -146,9 +163,9 @@ fn main() {
         let radius = rand() * 0.01 * lerp(3.0, 0.6, distance);
         // let is_circle = rand() < 0.5;
         let is_circle = true;
-        
+
         instances.push(InstanceData {
-            size: [radius, if is_circle { 0.0 } else { radius }],
+            size: Vector2::new(radius, if is_circle { 0.0 } else { radius }),
             position,
             color,
             ..Zeroable::zeroed()
@@ -159,7 +176,7 @@ fn main() {
 
     let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("vertex buffer"),
-        contents: bytemuck::cast_slice(vertices),
+        contents: cast_slice(vertices),
         usage: BufferUsages::VERTEX,
     });
 
@@ -182,7 +199,7 @@ fn main() {
 
     let instance_frag_data_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("instance frag data"),
-        contents: bytemuck::cast_slice(instances),
+        contents: cast_slice(instances),
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
     });
 
@@ -210,11 +227,45 @@ fn main() {
         }],
     });
 
+    let mut camera = Camera::default();
+
+    let camera_uniform = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("camera uniform"),
+        contents: cast_slice(&[camera]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let camera_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("camera bind group layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+
+    let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("camera bind group"),
+        layout: &camera_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: camera_uniform.as_entire_binding(),
+        }],
+    });
+
     let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
     let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&instance_frag_data_bind_group_layout],
+        bind_group_layouts: &[
+            &instance_frag_data_bind_group_layout,
+            &camera_bind_group_layout,
+        ],
         push_constant_ranges: &[],
     });
 
@@ -255,9 +306,32 @@ fn main() {
 
     let mut frame_moments = VecDeque::new();
 
+    let mut keys_pressed = HashSet::new();
+
     event_loop
         .run(|event, target| {
             if let Event::AboutToWait = event {
+                const MOVE_DIRS: [(KeyCode, Vector2); 4] = [
+                    (KeyCode::KeyW, Vector2::UP),
+                    (KeyCode::KeyA, Vector2::LEFT),
+                    (KeyCode::KeyS, Vector2::DOWN),
+                    (KeyCode::KeyD, Vector2::RIGHT),
+                ];
+                const MOVE_SPEED: f32 = 0.01;
+                const SHIFT_SPEED_MULT: f32 = 5.0;
+
+                for &(_, dir) in MOVE_DIRS
+                    .iter()
+                    .filter(|(code, _)| keys_pressed.contains(code))
+                {
+                    let speed_mult = match keys_pressed.contains(&KeyCode::ShiftLeft) {
+                        true => SHIFT_SPEED_MULT,
+                        false => 1.0,
+                    };
+                    camera.target += dir * MOVE_SPEED / camera.zoom * speed_mult;
+                }
+
+                queue.write_buffer(&camera_uniform, 0, cast_slice(&[camera]));
                 window.request_redraw();
             } else if let Event::WindowEvent {
                 window_id: _,
@@ -268,21 +342,42 @@ fn main() {
                     WindowEvent::CloseRequested => {
                         target.exit();
                     }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        const ZOOM_RATE: f32 = 1.1;
+                        match delta {
+                            MouseScrollDelta::LineDelta(_, y) => {
+                                camera.zoom *= ZOOM_RATE.powf(y);
+                            }
+                            MouseScrollDelta::PixelDelta(position) => {
+                                let y = position.y as f32;
+                                camera.zoom *= ZOOM_RATE.powf(y / 14.0); // isn't 14 like the best font size or something
+                            }
+                        }
+                    }
                     WindowEvent::KeyboardInput {
                         event:
                             KeyEvent {
                                 physical_key: PhysicalKey::Code(code),
-                                state: ElementState::Pressed,
+                                state,
                                 repeat: false,
                                 ..
                             },
                         ..
-                    } => match code {
-                        KeyCode::Enter => {
-                            println!("fps: {}", frame_moments.len());
+                    } => {
+                        match state {
+                            ElementState::Pressed => keys_pressed.insert(code),
+                            ElementState::Released => keys_pressed.remove(&code),
+                        };
+
+                        if let ElementState::Pressed = state {
+                            match code {
+                                KeyCode::Enter => {
+                                    println!("fps: {}", frame_moments.len());
+                                }
+                                _ => {}
+                            }
                         }
-                        _ => {}
-                    },
+                    }
                     WindowEvent::RedrawRequested => {
                         let now = Instant::now();
                         frame_moments.push_back(now);
@@ -321,6 +416,7 @@ fn main() {
 
                             render_pass.set_pipeline(&render_pipeline);
                             render_pass.set_bind_group(0, &instance_frag_data_bind_group, &[]);
+                            render_pass.set_bind_group(1, &camera_bind_group, &[]);
                             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                             // render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
                             render_pass.set_index_buffer(index_buffer.slice(..), index_format);

@@ -14,6 +14,14 @@ struct InstanceData {
     color: vec3<f32>,
 }
 
+struct Camera {
+    aim: vec2<f32>,
+    zoom: f32,
+}
+
+@group(1) @binding(0)
+var<uniform> camera: Camera;
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) in_vertex_index: u32,
@@ -21,16 +29,18 @@ fn vs_main(
     vertex_data: VertexInput,
 ) -> VertexOutput {
     let inst_data = instance_data[instance_index];
-    
-    var position: vec2<f32>;
-    if is_circle(inst_data) {
-        position = vertex_data.position * inst_data.size.x + inst_data.offset;
-    } else {
-        position = vertex_data.position * inst_data.size + inst_data.offset;
-    }
-    
+
+    let position = vertex_data.position
+        * vec2<f32>(
+            inst_data.size.x,
+            select(inst_data.size.y, inst_data.size.x, is_circle(inst_data))
+        )
+        + inst_data.offset;
+        
+    let screen_position = (position - camera.aim) * camera.zoom;
+
     return VertexOutput(
-        vec4<f32>(position, 0.0, 1.0),
+        vec4<f32>(screen_position, 0.0, 1.0),
         position,
         instance_index,
     );
@@ -48,7 +58,7 @@ var<storage, read> instance_data: array<InstanceData>;
 fn fs_main(vertex_data: VertexOutput) -> @location(0) vec4<f32> {
     let index = vertex_data.instance_index;
     let inst_data = instance_data[index];
-    
+
     if is_circle(inst_data) {
         let offset = vertex_data.position - inst_data.offset;
         let dist_sqr = dot(offset, offset);
