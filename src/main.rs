@@ -7,18 +7,7 @@ use std::collections::{HashSet, VecDeque};
 use std::time::Instant;
 use std::{iter, mem};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{
-    include_wgsl, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingType, BlendState, BufferAddress, BufferBindingType, BufferUsages,
-    Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode,
-    DeviceDescriptor, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits,
-    LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions,
-    PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState,
-    PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
-    RequestAdapterOptions, ShaderStages, StoreOp, SurfaceConfiguration, TextureFormat,
-    TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat,
-    VertexState, VertexStepMode,
-};
+use wgpu::{include_wgsl, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferAddress, BufferBindingType, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Face, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits, LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, StoreOp, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode};
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -30,7 +19,6 @@ mod vectors;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 struct Vertex {
-    position: Vector2,
 }
 
 #[repr(C)]
@@ -66,7 +54,7 @@ fn main() {
 
     let window = WindowBuilder::new()
         .with_resizable(false)
-        .with_min_inner_size(PhysicalSize::new(1000, 1000))
+        .with_min_inner_size(PhysicalSize::new(1600, 1000))
         .build(&event_loop)
         .unwrap();
 
@@ -137,15 +125,7 @@ fn main() {
     //     indices.push(next_i + 1);
     // }
 
-    let vertices = Box::new(
-        [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)].map(|pos| Vertex {
-            position: pos.into(),
-        }),
-    );
-
     let indices = Box::new([0u16, 1, 2, 0, 2, 3]);
-
-    let vertices = Box::leak(vertices);
     let indices = Box::leak(indices);
 
     let mut instances = Vec::new();
@@ -176,23 +156,19 @@ fn main() {
 
     let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("vertex buffer"),
-        contents: cast_slice(vertices),
+        contents: &[],
         usage: BufferUsages::VERTEX,
     });
 
     let vertex_buffer_layout = VertexBufferLayout {
         array_stride: mem::size_of::<Vertex>() as BufferAddress,
         step_mode: VertexStepMode::Vertex,
-        attributes: &[VertexAttribute {
-            format: VertexFormat::Float32x2,
-            offset: 0,
-            shader_location: 0,
-        }],
+        attributes: &[],
     };
 
     let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("index buffer"),
-        contents: bytemuck::cast_slice(indices),
+        contents: cast_slice(indices),
         usage: BufferUsages::INDEX,
     });
     let index_format = IndexFormat::Uint16;
@@ -292,7 +268,6 @@ fn main() {
             topology: PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: FrontFace::Ccw,
-            // cull_mode: Some(Face::Back),
             cull_mode: None,
             unclipped_depth: false,
             polygon_mode: PolygonMode::Fill,

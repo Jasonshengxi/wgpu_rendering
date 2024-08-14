@@ -1,5 +1,5 @@
 struct VertexInput {
-    @location(0) position: vec2<f32>,
+    @location(0) index: u32,
 }
 
 struct VertexOutput {
@@ -22,15 +22,37 @@ struct Camera {
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
+
+// this is a workaround to not being able to use const arrays
+fn get_vertex(index: u32) -> vec2<f32> {
+    switch index {
+        case 0u {
+            return vec2<f32>(1.0, 1.0);
+        }
+        case 1u {
+            return vec2<f32>(-1.0, 1.0);
+        }
+        case 2u {
+            return vec2<f32>(-1.0, -1.0);
+        }
+        case 3u {
+            return vec2<f32>(1.0, -1.0);
+        }
+        default {
+            return vec2<f32>();
+        }
+    }
+}
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) in_vertex_index: u32,
     @builtin(instance_index) instance_index: u32,
-    vertex_data: VertexInput,
 ) -> VertexOutput {
+    let in_position = get_vertex(in_vertex_index);
     let inst_data = instance_data[instance_index];
 
-    let position = vertex_data.position
+    let position = in_position
         * vec2<f32>(
             inst_data.size.x,
             select(inst_data.size.y, inst_data.size.x, is_circle(inst_data))
