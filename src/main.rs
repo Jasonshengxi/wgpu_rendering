@@ -3,7 +3,9 @@ use bytemuck::{cast_slice, NoUninit, Pod, Zeroable};
 use pollster::block_on;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+use rustc_hash::FxHasher;
 use std::collections::{HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::time::Instant;
 use std::{iter, mem};
 use wgpu::util::{BufferInitDescriptor, DeviceExt, RenderEncoder};
@@ -11,9 +13,9 @@ use wgpu::{
     include_wgsl, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, Buffer,
     BufferAddress, BufferBindingType, BufferDescriptor, BufferUsages, Color, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor, Features,
-    FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits, LoadOp, MemoryHints,
-    MultisampleState, Operations, PipelineCompilationOptions, PipelineLayout,
+    ColorWrites, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
+    DeviceDescriptor, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits,
+    LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions, PipelineLayout,
     PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState,
     PrimitiveTopology, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
     RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, ShaderModule, ShaderStages,
@@ -74,17 +76,17 @@ impl Default for Camera {
     }
 }
 
-struct RectCircleRenderPipeline {
-    drawer: RectCircleDrawer,
+struct RectCircleRenderPipeline<'d> {
+    drawer: RectCircleDrawer<'d>,
     shader: ShaderModule,
     pipeline_layout: PipelineLayout,
     render_pipeline: RenderPipeline,
 }
 
-impl RectCircleRenderPipeline {
+impl<'d> RectCircleRenderPipeline<'d> {
     pub fn new(
         device: &Device,
-        drawer: RectCircleDrawer,
+        drawer: RectCircleDrawer<'d>,
         shader: ShaderModule,
         texture_format: TextureFormat,
     ) -> Self {
@@ -151,7 +153,9 @@ impl RectCircleRenderPipeline {
     }
 }
 
-struct RectCircleDrawer {
+struct RectCircleDrawer<'d> {
+    device: &'d Device,
+
     instance_length: u32,
     instance_capacity: BufferAddress,
 
@@ -163,7 +167,7 @@ struct RectCircleDrawer {
     instance_bind_group: BindGroup,
 }
 
-impl RectCircleDrawer {
+impl<'d> RectCircleDrawer<'d> {
     const INDEX_VALUES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
     pub fn bind_group_layout(&self) -> &BindGroupLayout {
@@ -172,6 +176,87 @@ impl RectCircleDrawer {
 
     pub fn get_bind_group(&self) -> &BindGroup {
         &self.instance_bind_group
+    }
+
+    fn buffer_descriptor(
+        size: BufferAddress,
+        mapped_at_creation: bool,
+    ) -> BufferDescriptor<'static> {
+        BufferDescriptor {
+            label: Some("instance buffer"),
+            size,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            mapped_at_creation,
+        }
+    }
+
+    fn create_bind_group<'a>(
+        device: &'a Device,
+        layout: &'a BindGroupLayout,
+        buffer: &'a Buffer,
+    ) -> BindGroup {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some("instance bind group"),
+            layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        })
+    }
+
+    pub fn set_new_shapes(&mut self, queue: &Queue, new_instances: &[CircleOrRect]) {
+        if new_instances.len() <= self.instance_capacity as usize {
+            queue.write_buffer(&self.instance_buffer, 0, cast_slice(new_instances));
+        } else {
+            let new_shape_capacity = (new_instances.len() as BufferAddress).next_power_of_two();
+            let new_data = cast_slice(new_instances);
+            self.update_buffer_len(new_shape_capacity, true);
+
+            self.instance_buffer.slice(..).get_mapped_range_mut()[..new_data.len()]
+                .copy_from_slice(new_data);
+            self.instance_buffer.unmap();
+        }
+        self.instance_length = new_instances.len() as u32;
+    }
+
+    const fn shape_to_byte_capacity(shape_capacity: BufferAddress) -> BufferAddress {
+        shape_capacity * (mem::size_of::<CircleOrRect>() as BufferAddress)
+    }
+
+    pub fn shrink_to_fit(&mut self, command_encoder: &mut CommandEncoder) {
+        let shape_capacity = self.instance_length as BufferAddress;
+        let old_buffer = self.update_buffer_len(shape_capacity, false);
+
+        command_encoder.copy_buffer_to_buffer(
+            &old_buffer,
+            0,
+            &self.instance_buffer,
+            0,
+            Self::shape_to_byte_capacity(shape_capacity),
+        );
+    }
+
+    pub fn update_buffer_len(
+        &mut self,
+        new_shape_capacity: BufferAddress,
+        mapped_at_creation: bool,
+    ) -> Buffer {
+        let new_byte_capacity = Self::shape_to_byte_capacity(new_shape_capacity);
+
+        let new_buffer = self.device.create_buffer(&Self::buffer_descriptor(
+            new_byte_capacity,
+            mapped_at_creation,
+        ));
+
+        let new_bind_group =
+            Self::create_bind_group(self.device, &self.instance_bind_group_layout, &new_buffer);
+
+        let old_instance_buffer = mem::replace(&mut self.instance_buffer, new_buffer);
+        self.instance_bind_group = new_bind_group;
+        self.instance_capacity = new_shape_capacity;
+
+        old_instance_buffer
     }
 
     pub fn finish_render_pass(&self, render_pass: &mut RenderPass) {
@@ -184,7 +269,7 @@ impl RectCircleDrawer {
         );
     }
 
-    pub fn new_with_instances(device: &Device, instances: &[CircleOrRect]) -> Self {
+    pub fn new_with_instances(device: &'d Device, instances: &[CircleOrRect]) -> Self {
         Self::new(device, instances.len() as BufferAddress, Some(instances))
     }
 
@@ -205,7 +290,7 @@ impl RectCircleDrawer {
     }
 
     pub fn new(
-        device: &Device,
+        device: &'d Device,
         instance_capacity: BufferAddress,
         initial_instances: Option<&[CircleOrRect]>,
     ) -> Self {
@@ -222,14 +307,11 @@ impl RectCircleDrawer {
             usage: BufferUsages::INDEX,
         });
 
-        let instance_buffer_size =
-            instance_capacity * (mem::size_of::<CircleOrRect>() as BufferAddress);
-        let instance_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("instance buffer"),
-            size: instance_buffer_size,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-            mapped_at_creation: initial_instances.is_some(),
-        });
+        let instance_buffer_size = Self::shape_to_byte_capacity(instance_capacity);
+        let instance_buffer = device.create_buffer(&Self::buffer_descriptor(
+            instance_buffer_size,
+            initial_instances.is_some(),
+        ));
 
         if let Some(initial_instances) = initial_instances {
             assert!(initial_instances.len() as BufferAddress <= instance_capacity);
@@ -241,21 +323,18 @@ impl RectCircleDrawer {
 
         let instance_bind_group_layout = Self::create_bind_group_layout(device);
 
-        let instance_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("instance bind group"),
-            layout: &instance_bind_group_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: instance_buffer.as_entire_binding(),
-            }],
-        });
+        let instance_bind_group =
+            Self::create_bind_group(device, &instance_bind_group_layout, &instance_buffer);
 
         Self {
+            device,
+
             instance_length: initial_instances.map_or(0, |x| x.len() as u32),
             instance_capacity,
 
             empty_vertex_buffer,
             index_buffer,
+
             instance_buffer,
             instance_bind_group_layout,
             instance_bind_group,
@@ -430,42 +509,44 @@ fn main() {
 
     surface.configure(&device, &surface_config);
 
-    let mut instances = Vec::new();
-    let mut rng = SmallRng::seed_from_u64(1000);
-    let mut rand = || rng.random::<f32>();
-    for _ in 0..1_000_000 {
-        let position = Vector2::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0);
-        let distance = position.length() * std::f32::consts::FRAC_1_SQRT_2;
+    fn random_circles<'a>(amount: u32) -> &'a mut [CircleOrRect] {
+        let mut instances = Vec::new();
+        let now = Instant::now();
 
-        fn lerp(from: f32, to: f32, time: f32) -> f32 {
-            (1.0 - time) * from + time * to
+        let hash = {
+            let mut hasher = FxHasher::default();
+            now.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        let mut rng = SmallRng::seed_from_u64(hash);
+        let mut rand = || rng.random::<f32>();
+        for _ in 0..amount {
+            let position = Vector2::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0);
+            let distance = position.length() * std::f32::consts::FRAC_1_SQRT_2;
+
+            fn lerp(from: f32, to: f32, time: f32) -> f32 {
+                (1.0 - time) * from + time * to
+            }
+
+            let color = [rand(), rand(), rand()];
+            let radius = rand() * 0.01 * lerp(3.0, 0.6, distance);
+            instances.push(CircleOrRect::circle(position, radius, color));
         }
 
-        let color = [rand(), rand(), rand()];
-        let radius = rand() * 0.01 * lerp(3.0, 0.6, distance);
-        // let is_circle = rand() < 0.5;
-        let is_circle = true;
-
-        instances.push(CircleOrRect {
-            size: Vector2::new(radius, if is_circle { 0.0 } else { radius }),
-            position,
-            color,
-            ..Zeroable::zeroed()
-        });
+        Box::leak(Box::<[CircleOrRect]>::from(instances))
     }
 
-    let instances = Box::leak(Box::<[CircleOrRect]>::from(instances));
-
-    let rect_circle_data = RectCircleDrawer::new_with_instances(&device, instances);
+    let rect_circle_data = RectCircleDrawer::new(&device, 1024, None);
     let mut camera_transforms = CameraTransforms::new(&device, size);
 
     let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
-    let rect_circle_render =
+    let mut rect_circle_render =
         RectCircleRenderPipeline::new(&device, rect_circle_data, shader, texture_format);
 
     let mut frame_moments = VecDeque::new();
-
     let mut keys_pressed = HashSet::new();
+    let mut command_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
 
     event_loop
         .run(|event, target| {
@@ -541,7 +622,27 @@ fn main() {
                             match code {
                                 KeyCode::Enter => {
                                     println!("fps: {}", frame_moments.len());
+
+                                    println!("len: {}", rect_circle_render.drawer.instance_length);
+                                    println!(
+                                        "cap: {}",
+                                        rect_circle_render.drawer.instance_capacity
+                                    );
                                 }
+                                KeyCode::KeyR => {
+                                    let amount = match keys_pressed.contains(&KeyCode::ShiftLeft) {
+                                        true => 1_000_000,
+                                        false => 1_000,
+                                    };
+                                    let circles = random_circles(amount);
+
+                                    rect_circle_render.drawer.set_new_shapes(&queue, circles);
+                                }
+                                
+                                KeyCode::KeyT => {
+                                    rect_circle_render.drawer.shrink_to_fit(&mut command_encoder);
+                                }
+                                
                                 _ => {}
                             }
                         }
@@ -561,8 +662,6 @@ fn main() {
                         let view = texture
                             .texture
                             .create_view(&TextureViewDescriptor::default());
-                        let mut command_encoder =
-                            device.create_command_encoder(&CommandEncoderDescriptor::default());
 
                         // begin drawing
                         {
@@ -581,11 +680,15 @@ fn main() {
                                     timestamp_writes: None,
                                     occlusion_query_set: None,
                                 });
-                            
+
                             rect_circle_render.render(&mut render_pass, &camera_transforms);
                         }
 
-                        queue.submit(iter::once(command_encoder.finish()));
+                        take_mut::take(&mut command_encoder, |command_encoder| {
+                            queue.submit(iter::once(command_encoder.finish()));
+                            device.create_command_encoder(&CommandEncoderDescriptor::default())
+                        });
+
                         texture.present();
                     }
                     _ => {}

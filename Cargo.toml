@@ -9,6 +9,8 @@ winit = "0.29.15"
 pollster = "0.3.0"
 log = "*"
 env_logger = "*"
+take_mut = "0.2.2"
+rustc-hash = "2.0.0"
 
 [dependencies.bytemuck]
 version = "1.16.3"
