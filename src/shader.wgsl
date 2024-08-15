@@ -70,11 +70,6 @@ fn fs_main(vertex_data: VertexOutput) -> @location(0) vec4<f32> {
             discard;
         }
     }
-
-//    if is_circle(index) {
-//        return vec4<f32>(1.0, 0.0, 0.0, 1.0);
-//    }
-
     return vec4<f32>(inst_data.color, 1.0);
 }
 
