@@ -8,14 +8,14 @@ use std::collections::{HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 use std::{iter, mem};
-use wgpu::util::{BufferInitDescriptor, DeviceExt, RenderEncoder};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
     include_wgsl, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, Buffer,
     BufferAddress, BufferBindingType, BufferDescriptor, BufferUsages, Color, ColorTargetState,
     ColorWrites, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
     DeviceDescriptor, Features, FragmentState, FrontFace, IndexFormat, InstanceDescriptor, Limits,
-    LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions, PipelineLayout,
+    LoadOp, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions,
     PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState,
     PrimitiveTopology, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
     RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, ShaderModule, ShaderStages,
@@ -78,8 +78,6 @@ impl Default for Camera {
 
 struct RectCircleRenderPipeline<'d> {
     drawer: RectCircleDrawer<'d>,
-    shader: ShaderModule,
-    pipeline_layout: PipelineLayout,
     render_pipeline: RenderPipeline,
 }
 
@@ -139,16 +137,14 @@ impl<'d> RectCircleRenderPipeline<'d> {
 
         Self {
             drawer,
-            shader,
-            pipeline_layout,
             render_pipeline,
         }
     }
 
     pub fn render(&self, render_pass: &mut RenderPass, camera_transforms: &CameraTransforms) {
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, self.drawer.get_bind_group(), &[]);
-        render_pass.set_bind_group(1, camera_transforms.get_bind_group(), &[]);
+        self.drawer.bind_group_to(render_pass, 0);
+        camera_transforms.bind_group_to(render_pass, 1);
         self.drawer.finish_render_pass(render_pass);
     }
 }
@@ -174,8 +170,8 @@ impl<'d> RectCircleDrawer<'d> {
         &self.instance_bind_group_layout
     }
 
-    pub fn get_bind_group(&self) -> &BindGroup {
-        &self.instance_bind_group
+    pub fn bind_group_to(&self, render_pass: &mut RenderPass, index: u32) {
+        render_pass.set_bind_group(index, &self.instance_bind_group, &[]);
     }
 
     fn buffer_descriptor(
@@ -269,10 +265,6 @@ impl<'d> RectCircleDrawer<'d> {
         );
     }
 
-    pub fn new_with_instances(device: &'d Device, instances: &[CircleOrRect]) -> Self {
-        Self::new(device, instances.len() as BufferAddress, Some(instances))
-    }
-
     pub fn create_bind_group_layout(device: &Device) -> BindGroupLayout {
         device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("instance bind group layout"),
@@ -346,7 +338,6 @@ struct CameraTransforms {
     pub camera: Camera,
     camera_uniform: Buffer,
     aspect_transform_uniform: Buffer,
-    bind_group_layout: BindGroupLayout,
     bind_group: BindGroup,
 }
 
@@ -367,10 +358,6 @@ impl CameraTransforms {
             0,
             cast_thing(&Self::get_aspect_transform(size)),
         );
-    }
-
-    pub fn get_bind_group_layout(&self) -> &BindGroupLayout {
-        &self.bind_group_layout
     }
 
     pub fn create_bind_group_layout(device: &Device) -> BindGroupLayout {
@@ -401,8 +388,8 @@ impl CameraTransforms {
         })
     }
 
-    pub fn get_bind_group(&self) -> &BindGroup {
-        &self.bind_group
+    pub fn bind_group_to(&self, render_pass: &mut RenderPass, index: u32) {
+        render_pass.set_bind_group(index, &self.bind_group, &[]);
     }
 
     pub fn new(device: &Device, inner_size: PhysicalSize<u32>) -> Self {
@@ -441,7 +428,6 @@ impl CameraTransforms {
             camera,
             camera_uniform,
             aspect_transform_uniform,
-            bind_group_layout,
             bind_group,
         }
     }
@@ -638,11 +624,13 @@ fn main() {
 
                                     rect_circle_render.drawer.set_new_shapes(&queue, circles);
                                 }
-                                
+
                                 KeyCode::KeyT => {
-                                    rect_circle_render.drawer.shrink_to_fit(&mut command_encoder);
+                                    rect_circle_render
+                                        .drawer
+                                        .shrink_to_fit(&mut command_encoder);
                                 }
-                                
+
                                 _ => {}
                             }
                         }
