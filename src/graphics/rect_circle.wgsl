@@ -1,7 +1,3 @@
-struct VertexInput {
-    @location(0) index: u32,
-}
-
 struct VertexOutput {
     @builtin(position) screen_position: vec4<f32>,
     @location(0) position: vec2<f32>,

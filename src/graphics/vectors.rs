@@ -3,7 +3,7 @@
 use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Zeroable, Pod)]
+#[derive(Debug, Copy, Clone, Default, Zeroable, Pod)]
 pub struct Vector2 {
     pub x: f32,
     pub y: f32,

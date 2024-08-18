@@ -2,8 +2,8 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferUsages, Device, Queue, RenderPass, ShaderStages};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use winit::dpi::PhysicalSize;
-use crate::cast_thing;
-use crate::vectors::Vector2;
+use super::util::cast_thing;
+use super::vectors::Vector2;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
