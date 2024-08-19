@@ -23,6 +23,7 @@ use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent}
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowBuilder;
+use util::RandExt;
 
 mod camera;
 mod color;
@@ -101,9 +102,8 @@ pub fn main() {
     fn random_circles(amount: u32, rand_color: bool) -> Vec<RectOrCircle> {
         let mut instances = Vec::new();
         let mut rng = SmallRng::seed_from_u64(time_hash_u64());
-        let mut rand = || rng.random::<f32>();
         for _ in 0..amount {
-            let position = Vector2::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0);
+            let position = rng.vec2_centered();
             let distance = position.length() * std::f32::consts::FRAC_1_SQRT_2;
 
             fn lerp(from: f32, to: f32, time: f32) -> f32 {
@@ -111,11 +111,11 @@ pub fn main() {
             }
 
             let color = if rand_color {
-                Color::rgb(rand(), rand(), rand())
+                rng.color_srgb()
             } else {
                 Color::ORANGE
             };
-            let radius = rand() * 0.01 * lerp(3.0, 0.6, distance);
+            let radius = rng.f32() * 0.01 * lerp(3.0, 0.6, distance);
             instances.push(RectOrCircle::circle(position, radius, color));
         }
 
@@ -125,11 +125,10 @@ pub fn main() {
     fn random_lines(amount: u32) -> Vec<Line> {
         let mut instances = Vec::new();
         let mut rng = SmallRng::seed_from_u64(time_hash_u64());
-        let mut rand = || rng.random::<f32>();
         for _ in 0..amount {
-            let from = Vector2::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0);
-            let to = Vector2::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0);
-            let color = Color::rgb(rand(), rand(), rand());
+            let from = rng.vec2_centered();
+            let to = rng.vec2_centered();
+            let color = rng.color_srgb();
             instances.push(Line::new(from, to, color));
         }
         instances
@@ -138,10 +137,9 @@ pub fn main() {
     fn the_sun(amount: u32) -> Vec<Line> {
         let mut instances = Vec::new();
         let mut rng = SmallRng::seed_from_u64(time_hash_u64());
-        let mut rand = || rng.random::<f32>();
         for _ in 0..amount {
             let [from, to] = [(), ()].map(|_| {
-                let theta = rand() * std::f32::consts::TAU;
+                let theta = rng.f32() * std::f32::consts::TAU;
                 Vector2::new(theta.cos(), theta.sin())
             });
             instances.push(Line::new(from, to, Color::RED.with_alpha(0.01)));
