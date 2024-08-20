@@ -13,9 +13,9 @@ use wgpu::{
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, Zeroable, Pod)]
 pub struct RectOrCircle {
-    center: Vector2,
-    size: Vector2,
-    color: RawColor,
+    pub center: Vector2,
+    pub size: Vector2,
+    pub color: RawColor,
 }
 
 impl RectOrCircle {

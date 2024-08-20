@@ -1,5 +1,5 @@
 [package]
-name = "associative_memory"
+name = "wgpu_rendering"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,6 +11,7 @@ log = "*"
 env_logger = "*"
 take_mut = "0.2.2"
 rustc-hash = "2.0.0"
+float-ord = "0.3.2"
 
 [dependencies.bytemuck]
 version = "1.16.3"

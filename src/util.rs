@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use bytemuck::{cast_slice, NoUninit};
 use rand::Rng;
 use rand::rngs::SmallRng;
 use wgpu::{BindGroupLayout, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, Device, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModule, TextureFormat, VertexBufferLayout, VertexState, VertexStepMode};
-use crate::graphics::color::Color;
-use crate::graphics::vectors::Vector2;
+use crate::color::Color;
+use crate::vectors::Vector2;
 
 pub trait RandExt {
     fn f32(&mut self) -> f32;

@@ -4,15 +4,13 @@ use super::dynamic_storage::DynamicStorageBuffer;
 use super::util;
 use super::vectors::Vector2;
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::{BufferInitDescriptor, DeviceExt, RenderEncoder};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer,
-    BufferBindingType, BufferUsages, CommandEncoder, Device, Extent3d,
-    ImageSubresourceRange, PrimitiveTopology, RenderPass, RenderPipeline
-    , ShaderModule, ShaderStages, StorageTextureAccess,
-    Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureView, TextureViewDimension,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
+    CommandEncoder, Device, Extent3d, ImageSubresourceRange, PrimitiveTopology, RenderPass,
+    RenderPipeline, ShaderModule, ShaderStages, StorageTextureAccess, Texture, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDimension,
 };
 use winit::dpi::PhysicalSize;
 
@@ -172,18 +170,20 @@ impl LineRenderPipeline {
     }
 
     pub fn resize(&mut self, device: &Device, new_size: PhysicalSize<u32>) {
-        let new_texture = Self::create_accum_texture(device, new_size);
-        let new_texture_view = new_texture.create_view(&Default::default());
-        let new_bind_group = Self::create_bind_group(
-            device,
-            &self.accum_bind_group_layout,
-            &new_texture_view,
-            &self.use_alpha_buffer,
-        );
+        if self.use_alpha > 0 {
+            let new_texture = Self::create_accum_texture(device, new_size);
+            let new_texture_view = new_texture.create_view(&Default::default());
+            let new_bind_group = Self::create_bind_group(
+                device,
+                &self.accum_bind_group_layout,
+                &new_texture_view,
+                &self.use_alpha_buffer,
+            );
 
-        self.accum_texture = new_texture;
-        self.accum_texture_view = new_texture_view;
-        self.accum_bind_group = new_bind_group;
+            self.accum_texture = new_texture;
+            self.accum_texture_view = new_texture_view;
+            self.accum_bind_group = new_bind_group;
+        }
     }
 
     pub fn pre_render(&self, command_encoder: &mut CommandEncoder) {
