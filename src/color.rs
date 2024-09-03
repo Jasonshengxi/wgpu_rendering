@@ -63,6 +63,7 @@ impl Color {
 
     const fn srgb_lookup(c: u8) -> f32 {
         return LUT[c as usize];
+        #[allow(clippy::excessive_precision)]
         const LUT: [f32; 256] = [
             0.0000000000000000000,
             0.0003035269835488375,
@@ -329,6 +330,20 @@ impl Color {
             Self::srgb_lookup(g),
             Self::srgb_lookup(b),
         )
+    }
+
+    pub fn lerp(self, end: Self, progress: f32) -> Self {
+        #[inline]
+        fn lerp(start: f32, end: f32, progress: f32) -> f32 {
+            start + progress * (end - start)
+        }
+
+        Self {
+            red: lerp(self.red, end.red, progress),
+            green: lerp(self.green, end.green, progress),
+            blue: lerp(self.blue, end.blue, progress),
+            alpha: lerp(self.alpha, end.alpha, progress),
+        }
     }
 
     #[inline]

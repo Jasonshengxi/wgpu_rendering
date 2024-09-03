@@ -24,7 +24,7 @@ impl Renderable for TestApp {
         }
     }
 
-    fn render(&self, render: &mut RenderController) {
+    fn render(&mut self, render: &mut RenderController) {
         if let Some(mouse_pos) = self.mouse_pos {
             render.add_stage(RenderStage::Line);
             render.add_stage(RenderStage::RectsAndCircles);

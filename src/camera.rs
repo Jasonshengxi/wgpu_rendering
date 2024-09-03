@@ -26,6 +26,28 @@ impl Default for Camera {
     }
 }
 
+impl Camera {
+    pub const fn new(target: Vector2, zoom: f32) -> Self {
+        Self {
+            target,
+            zoom,
+            _padding: 0,
+        }
+    }
+    
+    pub fn zoomed_in_by(mut self, zoom: f32) -> Self {
+        self.zoom *= zoom;
+        self
+    }
+
+    pub fn covering(top_left: Vector2, bottom_right: Vector2) -> Self {
+        let target = (top_left + bottom_right) / 2.0;
+        let area = bottom_right - top_left;
+        let max_dim = area.x.max(area.y);
+        Self::new(target, max_dim.recip() * 2.0)
+    }
+}
+
 pub struct CameraTransforms {
     pub camera: Camera,
     aspect_ratio: Vector2,
@@ -63,7 +85,7 @@ impl CameraTransforms {
 
     pub fn update_aspect_ratio(&mut self, queue: &Queue, size: PhysicalSize<u32>) {
         self.aspect_ratio = Self::get_aspect_transform(size);
-        
+
         queue.write_buffer(
             &self.aspect_transform_uniform,
             0,

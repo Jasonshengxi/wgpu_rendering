@@ -1,4 +1,3 @@
-use camera::Camera;
 use camera::CameraTransforms;
 use lines::LineRenderPipeline;
 use pollster::block_on;
@@ -18,6 +17,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::WindowBuilder;
 
+pub use camera::Camera;
 pub use color::Color;
 pub use dynamic_storage::DynamicStorageBuffer;
 pub use lines::Line;
@@ -25,6 +25,8 @@ pub use rect_circle::RectOrCircle;
 pub use vectors::Vector2;
 pub use winit::event::{ElementState, MouseButton};
 pub use winit::keyboard::KeyCode;
+#[cfg(feature = "glam")]
+pub use vectors::AsVector2;
 
 mod camera;
 mod color;
@@ -90,8 +92,12 @@ pub trait Renderable {
 
     const USE_LINE_ALPHA: bool = false;
 
+    fn initial_camera(&self) -> Camera {
+        Camera::default()
+    }
+
     fn tick(&mut self, access: &WindowAccess) {}
-    fn render(&self, render: &mut RenderController);
+    fn render(&mut self, render: &mut RenderController);
 
     fn on_key_event(&mut self, key_code: KeyCode, state: ElementState, repeat: bool) {}
     fn on_mouse_event(&mut self, button: MouseButton, state: ElementState) {}
@@ -100,9 +106,11 @@ pub trait Renderable {
 pub struct WindowAccess<'a> {
     keys_down: &'a HashSet<KeyCode>,
     keys_pressed: &'a HashSet<KeyCode>,
+    keys_released: &'a HashSet<KeyCode>,
 
     buttons_down: &'a HashSet<MouseButton>,
     buttons_pressed: &'a HashSet<MouseButton>,
+    buttons_released: &'a HashSet<MouseButton>,
 
     camera: &'a Camera,
     mouse_pos_screen: Vector2,
@@ -118,12 +126,20 @@ impl WindowAccess<'_> {
         self.keys_pressed.contains(&key)
     }
 
+    pub fn is_key_released(&self, key: KeyCode) -> bool {
+        self.keys_released.contains(&key)
+    }
+
     pub fn is_button_down(&self, button: MouseButton) -> bool {
         self.buttons_down.contains(&button)
     }
 
     pub fn is_button_pressed(&self, button: MouseButton) -> bool {
         self.buttons_pressed.contains(&button)
+    }
+
+    pub fn is_button_released(&self, button: MouseButton) -> bool {
+        self.buttons_released.contains(&button)
     }
 
     pub fn camera_target(&self) -> Vector2 {
@@ -203,6 +219,7 @@ pub fn run<A: Renderable>(mut application: A) {
     surface.configure(&device, &surface_config);
 
     let mut camera_transforms = CameraTransforms::new(&device, size);
+    camera_transforms.camera = application.initial_camera();
 
     let rect_circle_data = DynamicStorageBuffer::new(&device);
     let rect_circle_shader = device.create_shader_module(include_wgsl!("rect_circle.wgsl"));
@@ -276,8 +293,10 @@ pub fn run<A: Renderable>(mut application: A) {
                 let access = WindowAccess {
                     keys_down: &keys_down,
                     keys_pressed: &keys_pressed,
+                    keys_released: &keys_released,
                     buttons_down: &buttons_down,
                     buttons_pressed: &buttons_pressed,
+                    buttons_released: &buttons_released,
                     camera: &camera_transforms.camera,
                     mouse_pos_screen,
                     mouse_pos_world,
