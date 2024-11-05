@@ -34,7 +34,7 @@ impl Camera {
             _padding: 0,
         }
     }
-    
+
     pub fn zoomed_in_by(mut self, zoom: f32) -> Self {
         self.zoom *= zoom;
         self
@@ -60,7 +60,7 @@ impl CameraTransforms {
     pub fn screen_to_world(&self, screen_pos: Vector2, inner_size: PhysicalSize<u32>) -> Vector2 {
         self.normalized_to_world(Self::screen_to_normalize(screen_pos, inner_size))
     }
-    
+
     pub fn screen_to_normalize(screen_pos: Vector2, inner_size: PhysicalSize<u32>) -> Vector2 {
         (screen_pos / Vector2::from(<[u32; 2]>::from(inner_size).map(|x| x as f32)))
             * Vector2::new(2.0, -2.0)

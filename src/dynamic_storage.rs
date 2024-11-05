@@ -92,8 +92,7 @@ impl<I: Zeroable + Pod> DynamicStorageBuffer<I> {
         );
     }
 
-    pub fn set_new_data(&mut self, device: &Device, queue: &Queue, data: &[I])
-    {
+    pub fn set_new_data(&mut self, device: &Device, queue: &Queue, data: &[I]) {
         if data.len() <= self.item_capacity as usize {
             queue.write_buffer(&self.buffer, 0, cast_slice(data));
         } else {

@@ -6,8 +6,8 @@ use super::vectors::Vector2;
 use bytemuck::{cast_slice, Pod, Zeroable};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Buffer, BufferUsages, Device, IndexFormat,
-    PrimitiveTopology, RenderPass, RenderPipeline, ShaderModule, TextureFormat,
+    Buffer, BufferUsages, Device, IndexFormat, PrimitiveTopology, RenderPass, RenderPipeline,
+    ShaderModule, TextureFormat,
 };
 
 #[repr(C)]

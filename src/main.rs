@@ -32,7 +32,7 @@ impl Renderable for TestApp {
             render.add_line(Line::new(mouse_pos, Vector2::ZERO, Color::WHITE));
             render.add_rect_or_circle(RectOrCircle::circle(mouse_pos, 0.1, Color::RED))
         }
-        
+
         render.try_add_stage(RenderStage::Line);
         for i in -10..=10 {
             for j in -10..=10 {

@@ -7,7 +7,6 @@ edition = "2021"
 glam = ["dep:glam"]
 
 [dependencies]
-wgpu = "22.1.0"
 winit = "0.29.15"
 pollster = "0.3.0"
 log = "*"
@@ -15,6 +14,11 @@ env_logger = "*"
 take_mut = "0.2.2"
 rustc-hash = "2.0.0"
 float-ord = "0.3.2"
+
+[dependencies.wgpu]
+version = "22.1.0"
+default-features = false
+features = ["wgsl", "dx12"]
 
 [dependencies.bytemuck]
 version = "1.16.3"

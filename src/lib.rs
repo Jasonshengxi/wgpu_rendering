@@ -4,6 +4,7 @@ use pollster::block_on;
 use rect_circle::RectCircleRenderPipeline;
 use std::collections::{HashSet, VecDeque};
 use std::iter;
+use std::mem::replace;
 use std::time::Instant;
 use wgpu::{
     include_wgsl, Backends, CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor,
@@ -22,11 +23,11 @@ pub use color::Color;
 pub use dynamic_storage::DynamicStorageBuffer;
 pub use lines::Line;
 pub use rect_circle::RectOrCircle;
+#[cfg(feature = "glam")]
+pub use vectors::AsVector2;
 pub use vectors::Vector2;
 pub use winit::event::{ElementState, MouseButton};
 pub use winit::keyboard::KeyCode;
-#[cfg(feature = "glam")]
-pub use vectors::AsVector2;
 
 mod camera;
 mod color;
@@ -180,7 +181,7 @@ pub fn run<A: Renderable>(mut application: A) {
     let adapter = block_on(instance.request_adapter(&RequestAdapterOptions {
         power_preference: PowerPreference::HighPerformance,
         compatible_surface: Some(&surface),
-        force_fallback_adapter: false,
+        force_fallback_adapter: true,
     }))
     .unwrap();
 
@@ -450,10 +451,9 @@ pub fn run<A: Renderable>(mut application: A) {
                             }
                         }
 
-                        take_mut::take(&mut command_encoder, |command_encoder| {
-                            queue.submit(iter::once(command_encoder.finish()));
-                            device.create_command_encoder(&CommandEncoderDescriptor::default())
-                        });
+                        let new_ce = device.create_command_encoder(&CommandEncoderDescriptor::default());
+                        let old_ce = replace(&mut command_encoder, new_ce);
+                        queue.submit(iter::once(old_ce.finish()));
 
                         texture.present();
                     }

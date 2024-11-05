@@ -1,11 +1,17 @@
 #![allow(dead_code)]
 
-use bytemuck::{cast_slice, NoUninit};
-use rand::Rng;
-use rand::rngs::SmallRng;
-use wgpu::{BindGroupLayout, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, Device, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModule, TextureFormat, VertexBufferLayout, VertexState, VertexStepMode};
 use crate::color::Color;
 use crate::vectors::Vector2;
+use bytemuck::{cast_slice, NoUninit};
+use rand::rngs::SmallRng;
+use rand::Rng;
+use wgpu::{
+    BindGroupLayout, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState,
+    ColorWrites, Device, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions,
+    PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModule, TextureFormat, VertexBufferLayout,
+    VertexState, VertexStepMode,
+};
 
 pub trait RandExt {
     fn f32(&mut self) -> f32;
@@ -19,20 +25,17 @@ impl RandExt for SmallRng {
     fn f32(&mut self) -> f32 {
         self.random::<f32>()
     }
-    
+
     fn f32_centered(&mut self) -> f32 {
         self.random::<f32>() * 2.0 - 1.0
     }
-    
+
     fn u8(&mut self) -> u8 {
         self.random::<u8>()
     }
-    
+
     fn vec2_centered(&mut self) -> Vector2 {
-        Vector2::new(
-            self.f32_centered(),
-            self.f32_centered(),
-        )
+        Vector2::new(self.f32_centered(), self.f32_centered())
     }
 
     fn color_srgb(&mut self) -> Color {
@@ -45,7 +48,7 @@ pub fn cast_thing<T: NoUninit>(thing: &T) -> &[u8] {
     cast_slice(slice::from_ref(thing))
 }
 
-pub fn create_empty_vertex_buffer(device: &Device) -> Buffer {    
+pub fn create_empty_vertex_buffer(device: &Device) -> Buffer {
     device.create_buffer(&BufferDescriptor {
         label: None,
         size: 0,
